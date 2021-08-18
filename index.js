@@ -19,6 +19,7 @@ app.get('/restaurants', async (req, res) => {
           sequelize.literal(
             `(SELECT COUNT(*) FROM reviews AS r WHERE r.restaurant_id = restaurant.id)`
           ),
+          'review_count',
         ],
       ],
     },
