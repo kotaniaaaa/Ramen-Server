@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
-import * as data from './sample-data.js';
+import sequelize from 'sequelize';
+import { Restaurant, Review, User } from './models.js';
 
 // Expressアプリケーションのインスタンス作成
 const app = express();
@@ -11,11 +12,27 @@ app.use(cors());
 app.get('/restaurants', async (req, res) => {
   const limit = +req.query.limit || 5; // 取得件数
   const offset = +req.query.offset || 0; // リストの何番目から取得を行うか
-  const restaurants = data.restaurants;
-  res.json({
-    rows: restaurants.slice(offset, offset + limit), // ラーメン店の情報の配列
-    count: data.restaurants.length, // サンプルデータにあるラーメン店の全件数
+  const restaurants = await Restaurant.findAndCountAll({
+    attributes: {
+      include: [
+        [
+          sequelize.literal(
+            `(SELECT COUNT(*) FROM reviews AS r WHERE r.restaurant_id = restaurant.id)`
+          ),
+        ],
+      ],
+    },
+    include: { model: Review, limit: 3, include: { model: User } }, // 一つの店につき3件のレビュー
+    order: [[sequelize.literal('review_count'), 'DESC']], // レビュー件数の降順でソート
+    limit,
+    offset,
   });
+  res.json(restaurants);
+  // 仮データを使わなくなったのでコメントアウト
+  // res.json({
+  //   rows: restaurants.slice(offset, offset + limit), // ラーメン店の情報の配列
+  //   count: data.restaurants.length, // サンプルデータにあるラーメン店の全件数
+  // });
 });
 
 // app.get(path, handler)で、pathに対するGETリクエストをhandlerの関数で処理することが可能。
@@ -25,9 +42,7 @@ app.get('/restaurants', async (req, res) => {
 app.get('/restaurants/:restaurantId', async (req, res) => {
   // ラーメン店ID取得
   const restaurantId = +req.params.restaurantId;
-  const restaurant = data.restaurants.find(
-    (restaurant) => restaurant.id === restaurantId
-  );
+  const restaurant = await Restaurant.findByPk(restaurantId);
   if (!restaurant) {
     // IDが見つからなかった
     res.status(404).send('not found');
@@ -41,20 +56,19 @@ app.get('/restaurants/:restaurantId/reviews', async (req, res) => {
   const restaurantId = +req.params.restaurantId;
   const limit = +req.query.limit || 5;
   const offset = +req.query.offset || 0;
-  const restaurant = data.restaurants.find(
-    (restaurant) => restaurant.id === restaurantId
-  );
+  const restaurant = await Restaurant.findByPk(restaurantId);
   if (!restaurant) {
     res.status(404).send('not found');
     return;
   }
-  const reviews = data.reviews.filter(
-    (review) => review.restaurantId === restaurantId
-  );
-  res.json({
-    count: reviews.length,
-    rows: reviews.slice(offset, offset + limit),
+
+  const reviews = await Review.findAndCountAll({
+    include: { model: User }, // レビューを書いたユーザーの情報を含ませてレスポンスする
+    where: { restaurantId },
+    limit,
+    offset,
   });
+  res.json(reviews);
 });
 
 const port = process.env.PORT || 5000;
